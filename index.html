@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Cosmic Mind Reader</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #0f172a; /* Slate 900 */
+            font-family: 'Segoe UI', sans-serif;
+            touch-action: none; /* Prevent scrolling/zooming on mobile */
+            -webkit-user-select: none; /* Disable text selection */
+            user-select: none;
+        }
+
+        #physics-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+        }
+
+        /* We map HTML elements to Physics bodies so we can style them easily */
+        .number-bubble {
+            position: absolute;
+            top: 0;
+            left: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            border-radius: 50%;
+            font-weight: bold;
+            color: white;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+            pointer-events: none; /* Physics engine handles interactions */
+            will-change: transform;
+            font-size: 1.2rem;
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(4px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            z-index: 5; /* Ensure bubbles are above background */
+        }
+
+        #ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 10;
+            pointer-events: none; /* Let clicks pass through to buttons */
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+
+        .interactive {
+            pointer-events: auto;
+            cursor: pointer;
+        }
+
+        /* Prevent tap highlight color on mobile */
+        .interactive:active {
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        .glass-panel {
+            background: rgba(15, 23, 42, 0.6);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 16px;
+            padding: 20px;
+            text-align: center;
+            color: white;
+        }
+
+        .btn {
+            transition: transform 0.1s, box-shadow 0.1s;
+        }
+        .btn:active {
+            transform: scale(0.95);
+        }
+
+        #reveal-screen {
+            display: none;
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 20;
+            background: #0f172a;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            color: white;
+        }
+        
+        /* Animation for the reveal */
+        @keyframes pulse-glow {
+            0% { text-shadow: 0 0 10px #6366f1; transform: scale(1); }
+            50% { text-shadow: 0 0 30px #818cf8; transform: scale(1.1); }
+            100% { text-shadow: 0 0 10px #6366f1; transform: scale(1); }
+        }
+        .magic-number {
+            font-size: 8rem;
+            font-weight: 900;
+            animation: pulse-glow 2s infinite;
+            background: -webkit-linear-gradient(#c084fc, #6366f1);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+    </style>
+</head>
+<body>
+
+    <!-- Physics World -->
+    <div id="physics-container"></div>
+
+    <!-- UI Layer -->
+    <div id="ui-layer">
+        <!-- Header -->
+        <div id="header-panel" class="glass-panel interactive mx-auto mt-4 max-w-md w-full">
+            <h1 class="text-xl font-bold text-blue-300 mb-2">The Cosmic Mind Reader</h1>
+            <p id="instruction-text" class="text-sm text-gray-300">Think of a number between 1 and 60.</p>
+        </div>
+
+        <!-- Intro Start Button -->
+        <div id="start-container" class="absolute inset-0 flex items-center justify-center interactive" style="background:rgba(15,23,42,0.9); z-index: 50;">
+            <div class="text-center p-6">
+                <div class="text-6xl mb-6">🔮</div>
+                <h2 class="text-3xl font-bold text-white mb-4">I can read your mind.</h2>
+                <p class="text-gray-400 mb-8">Think of a number between 1 and 60.<br>Keep it secret.</p>
+                <button onclick="startGame()" class="bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-4 px-10 rounded-full text-xl shadow-lg shadow-indigo-500/50 transition-all active:scale-95">
+                    Start the Trance
+                </button>
+            </div>
+        </div>
+
+        <!-- Game Controls (Hidden initially) -->
+        <div id="controls" class="flex gap-4 mb-8 justify-center w-full hidden interactive px-4">
+            <button onclick="handleAnswer(false)" class="btn flex-1 max-w-[150px] bg-gray-700 hover:bg-gray-600 text-white font-bold py-4 px-6 rounded-2xl border border-gray-500 shadow-lg">
+                NO
+                <div class="text-xs font-normal text-gray-400 mt-1">Not here</div>
+            </button>
+            <button onclick="handleAnswer(true)" class="btn flex-1 max-w-[150px] bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-4 px-6 rounded-2xl border border-indigo-400 shadow-lg shadow-indigo-500/30">
+                YES
+                <div class="text-xs font-normal text-indigo-200 mt-1">I see it</div>
+            </button>
+        </div>
+    </div>
+
+    <!-- Reveal Screen -->
+    <div id="reveal-screen">
+        <p class="text-2xl text-gray-400 mb-4 text-center px-4">Your number is...</p>
+        <div id="final-number" class="magic-number">0</div>
+        <button onclick="location.reload()" class="mt-12 text-gray-500 hover:text-white border border-gray-700 hover:border-white px-8 py-3 rounded-full transition-colors interactive text-lg">
+            Play Again
+        </button>
+    </div>
+
+    <script>
+        // --- MAGIC LOGIC ---
+        // 6 Cards logic for numbers 1-63
+        const cardBits = [1, 2, 4, 8, 16, 32]; 
+        let currentCardIndex = 0;
+        let secretTotal = 0;
+        const maxNumber = 60; // We limit to 60 for cleaner UX, though logic supports 63
+
+        function getNumbersForCard(bit) {
+            let numbers = [];
+            for (let i = 1; i <= maxNumber; i++) {
+                if ((i & bit) === bit) {
+                    numbers.push(i);
+                }
+            }
+            return numbers;
+        }
+
+        // --- MATTER.JS SETUP ---
+        const Engine = Matter.Engine,
+              Runner = Matter.Runner,
+              Bodies = Matter.Bodies,
+              Composite = Matter.Composite,
+              Events = Matter.Events,
+              Body = Matter.Body;
+
+        const engine = Engine.create();
+        engine.gravity.y = 0; // Start with Zero Gravity (floating)
+        engine.gravity.x = 0;
+
+        const world = engine.world;
+        const container = document.getElementById('physics-container');
+        
+        // Store our custom bodies and their DOM elements
+        let floatingBubbles = []; 
+        let walls = [];
+
+        // Define Safe Zones (Header and Footer Heights)
+        const headerHeight = 180; // Approx height of title panel + margin
+        const footerHeight = 160; // Approx height of buttons + margin
+        const wallThickness = 60;
+
+        function createWalls() {
+            // Remove existing walls if any
+            if(walls.length > 0) {
+                Composite.remove(world, walls);
+            }
+
+            const w = window.innerWidth;
+            const h = window.innerHeight;
+
+            walls = [
+                // Top Wall (Blocks bubbles from entering Header area)
+                Bodies.rectangle(w/2, headerHeight/2, w, headerHeight, { isStatic: true }),
+                
+                // Bottom Wall (Blocks bubbles from entering Footer area)
+                Bodies.rectangle(w/2, h - footerHeight/2, w, footerHeight, { isStatic: true }),
+                
+                // Right Wall
+                Bodies.rectangle(w + wallThickness/2, h/2, wallThickness, h, { isStatic: true }),
+                
+                // Left Wall
+                Bodies.rectangle(-wallThickness/2, h/2, wallThickness, h, { isStatic: true }) 
+            ];
+            Composite.add(world, walls);
+        }
+
+        function createBubble(number) {
+            const radius = window.innerWidth < 600 ? 25 : 35; // Responsive size
+            
+            // Calculate Spawn Area (Between Header and Footer)
+            const minX = radius + 20;
+            const maxX = window.innerWidth - radius - 20;
+            const minY = headerHeight + radius + 10;
+            const maxY = window.innerHeight - footerHeight - radius - 10;
+
+            // Random position within safe zone
+            const x = Math.random() * (maxX - minX) + minX;
+            const y = Math.random() * (maxY - minY) + minY;
+
+            // Physics Body
+            const body = Bodies.circle(x, y, radius, {
+                restitution: 0.9, // Bouncy
+                friction: 0.001,
+                frictionAir: 0.02, // Floatiness
+                density: 0.01
+            });
+
+            // Initial random push
+            Body.setVelocity(body, {
+                x: (Math.random() - 0.5) * 5,
+                y: (Math.random() - 0.5) * 5
+            });
+
+            // HTML Element
+            const el = document.createElement('div');
+            el.classList.add('number-bubble');
+            el.innerText = number;
+            el.style.width = (radius * 2) + 'px';
+            el.style.height = (radius * 2) + 'px';
+            
+            // Random Colors based on card index to keep it fresh
+            const colors = [
+                'linear-gradient(135deg, #3b82f6, #2563eb)', // Blue
+                'linear-gradient(135deg, #8b5cf6, #7c3aed)', // Violet
+                'linear-gradient(135deg, #ec4899, #db2777)', // Pink
+                'linear-gradient(135deg, #10b981, #059669)', // Emerald
+                'linear-gradient(135deg, #f59e0b, #d97706)', // Amber
+                'linear-gradient(135deg, #ef4444, #dc2626)'  // Red
+            ];
+            el.style.background = colors[currentCardIndex % colors.length];
+
+            container.appendChild(el);
+
+            return { body, el };
+        }
+
+        // Sync HTML elements with Physics bodies
+        Events.on(engine, 'afterUpdate', function() {
+            floatingBubbles.forEach(item => {
+                const { x, y } = item.body.position;
+                item.el.style.transform = `translate(${x - item.el.offsetWidth/2}px, ${y - item.el.offsetHeight/2}px)`;
+            });
+        });
+
+        // Handle Resize - Reposition walls
+        window.addEventListener('resize', () => {
+            createWalls();
+        });
+
+        // --- GAME LOGIC ---
+
+        function startGame() {
+            document.getElementById('start-container').style.display = 'none';
+            document.getElementById('controls').classList.remove('hidden');
+            
+            // Init physics
+            createWalls();
+            const runner = Runner.create();
+            Runner.run(runner, engine);
+            
+            loadCard();
+        }
+
+        function loadCard() {
+            // Clear previous bubbles
+            clearBubbles();
+
+            if (currentCardIndex >= cardBits.length) {
+                showReveal();
+                return;
+            }
+
+            // Update UI text
+            document.getElementById('instruction-text').innerHTML = 
+                `Look at the floating numbers.<br>Is your number here? (Card ${currentCardIndex + 1}/6)`;
+
+            const numbers = getNumbersForCard(cardBits[currentCardIndex]);
+            
+            // Create physics bodies for these numbers
+            numbers.forEach(num => {
+                const bubble = createBubble(num);
+                floatingBubbles.push(bubble);
+                Composite.add(world, bubble.body);
+            });
+        }
+
+        function handleAnswer(isYes) {
+            if (isYes) {
+                secretTotal += cardBits[currentCardIndex];
+                animateYes();
+            } else {
+                animateNo();
+            }
+
+            // Delay slightly to allow animation to start before switching logic
+            setTimeout(() => {
+                currentCardIndex++;
+                loadCard();
+            }, 600);
+        }
+
+        function animateYes() {
+            // Implode effect: Suck everything to center
+            const centerX = window.innerWidth / 2;
+            const centerY = window.innerHeight / 2;
+            
+            floatingBubbles.forEach(item => {
+                const forceMagnitude = 0.05 * item.body.mass;
+                Body.applyForce(item.body, item.body.position, {
+                    x: (centerX - item.body.position.x) * forceMagnitude * 0.02,
+                    y: (centerY - item.body.position.y) * forceMagnitude * 0.02
+                });
+                // Shrink effect via CSS
+                item.el.style.transition = 'transform 0.5s, opacity 0.5s';
+                item.el.style.opacity = '0';
+                item.el.style.transform += ' scale(0)';
+            });
+        }
+
+        function animateNo() {
+            // Explode effect: Blow everything away
+            floatingBubbles.forEach(item => {
+                const forceX = (Math.random() - 0.5) * 0.5; // Strong random force
+                const forceY = (Math.random() - 0.5) * 0.5;
+                Body.applyForce(item.body, item.body.position, { x: forceX, y: forceY });
+                
+                item.el.style.transition = 'transform 0.5s, opacity 0.5s';
+                item.el.style.opacity = '0';
+            });
+        }
+
+        function clearBubbles() {
+            // Remove bodies from world and elements from DOM
+            floatingBubbles.forEach(item => {
+                Composite.remove(world, item.body);
+                item.el.remove();
+            });
+            floatingBubbles = [];
+        }
+
+        function showReveal() {
+            document.getElementById('ui-layer').style.display = 'none';
+            document.getElementById('physics-container').style.display = 'none';
+            
+            const revealScreen = document.getElementById('reveal-screen');
+            revealScreen.style.display = 'flex';
+            
+            // Fake "Processing" delay
+            const finalNumEl = document.getElementById('final-number');
+            finalNumEl.innerText = "...";
+            
+            setTimeout(() => {
+                finalNumEl.innerText = secretTotal;
+                // Trigger confetti or sound here if desired
+            }, 1500);
+        }
+
+        // Initialize walls on load (though startGame does it too)
+        createWalls();
+
+    </script>
+</body>
+</html>
